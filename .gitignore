@@ -1,6 +1,8 @@
 # Environment variables
+.env.*
 .env
 data
+korbot
 
 # Python cache files
 __pycache__/
