@@ -358,10 +358,6 @@ class Bot:
             importance=MessageImportance.DEFAULT,
         )
         
-        # Get chat history
-        messages = self.db.get_last_messages(chat_id)
-        history = format_chat_history(messages)
-        
         # Extract query from message
         query = message.text
         if "," in query:
@@ -370,6 +366,26 @@ class Bot:
             query = query.split(" ", 1)[1].strip()
         else:
             query = ""
+        
+        # Extract context limit from query (!контекст=N)
+        context_limit = 120  # Default value
+        if "!контекст=" in query.lower():
+            import re
+            match = re.search(r'!контекст=(\d+)', query, re.IGNORECASE)
+            if match:
+                try:
+                    requested_limit = int(match.group(1))
+                    # Limit to maximum 3000 messages
+                    context_limit = min(requested_limit, 3000)
+                    # Remove the !контекст=N from query
+                    query = re.sub(r'!контекст=\d+', '', query, flags=re.IGNORECASE).strip()
+                    logging.info(f"[{self.session_name}] Context limit set to {context_limit}")
+                except ValueError:
+                    logging.warning(f"[{self.session_name}] Invalid context limit value, using default")
+        
+        # Get chat history with specified limit
+        messages = self.db.get_last_messages(chat_id, limit=context_limit)
+        history = format_chat_history(messages)
         
         combined_query = history + "\n\nТекущий запрос пользователя: " + query
         
