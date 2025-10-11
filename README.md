@@ -44,7 +44,7 @@ cd buisbot
 2. **Создайте первую сессию:**
 
 ```bash
-docker compose run --rm bots python add_session.py
+docker compose run --rm bots uv run python add_session.py
 ```
 
 Следуйте инструкциям для входа в ваш Telegram аккаунт.
