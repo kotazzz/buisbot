@@ -30,7 +30,8 @@ def load_system_prompt() -> str:
 
 
 class GeminiModel(Enum):
-    FLASH = "gemini-flash-lite-latest"
+    # FLASH = "gemini-flash-lite-latest"
+    FLASH = "gemini-flash-latest"
     FLASH_THINKING = "gemini-2.5-pro"
     # FLASH_MULTIMODAL = "gemini-flash-latest"
     FLASH_MULTIMODAL = "gemini-2.5-pro"
