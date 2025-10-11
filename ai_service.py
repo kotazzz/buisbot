@@ -30,9 +30,9 @@ def load_system_prompt() -> str:
 
 
 class GeminiModel(Enum):
-    FLASH = "gemini-2.0-flash"
-    FLASH_THINKING = "gemini-2.0-flash-thinking-exp-01-21"
-    FLASH_MULTIMODAL = "gemini-2.0-flash"  # Используем 2.0 для мультимодальных
+    FLASH = "gemini-flash-lite-latest"
+    FLASH_THINKING = "gemini-2.5-pro"
+    FLASH_MULTIMODAL = "gemini-flash-latest"
 
 
 def get_mime_type(file_path: str) -> str:
