@@ -1,10 +1,15 @@
+# Configuration (contains sensitive data)
 config.json
 
-# Environment variables
-.env.*
-.env
-data
+# Data directory (sessions and databases)
+data/
+
+# Legacy environment files (no longer used)
+.env*
+
+# Temporary files
 korbot
+output.txt
 
 # Python cache files
 __pycache__/

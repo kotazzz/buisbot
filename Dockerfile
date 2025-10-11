@@ -2,20 +2,20 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install poetry
-RUN pip install poetry
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copy poetry configuration files
-COPY pyproject.toml poetry.lock ./
-
-# Configure poetry to not create a virtual environment
-RUN poetry config virtualenvs.create false
+# Copy dependency files
+COPY pyproject.toml ./
 
 # Install dependencies
-RUN poetry install --no-interaction --no-ansi
+RUN uv sync --frozen --no-dev
 
 # Copy the application
 COPY . .
+
+# Set PATH to use uv's managed Python environment
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Run the application
 CMD ["python", "main.py"]
