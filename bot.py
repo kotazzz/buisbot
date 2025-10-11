@@ -79,11 +79,6 @@ class Bot:
     def _register_handlers(self):
         """Register all message handlers"""
         
-        # Test command
-        self.client.on_message(
-            filters.me & filters.command("test", prefixes="!") & self.whitelist
-        )(self.test_command)
-        
         # Whitelist management
         self.client.on_message(filters.me & filters.command("enable", prefixes="!"))(self.enable_command)
         self.client.on_message(filters.me & filters.command("disable", prefixes="!"))(self.disable_command)
@@ -95,6 +90,9 @@ class Bot:
         
         # Debug command
         self.client.on_message(filters.me & filters.command("debug", prefixes="!"))(self.debug_command)
+        
+        # Test prompt command - shows full AI prompt without calling AI (owner only)
+        self.client.on_message(filters.me & filters.command("test", prefixes="!"))(self.test_prompt_command)
         
         # Media analysis command
         self.client.on_message(filters.all & filters.command("media", prefixes="!"))(self.media_command)
@@ -109,10 +107,6 @@ class Bot:
         self.client.on_message(filters.all)(self.store_message)
     
     # --- Command Handlers ---
-    
-    async def test_command(self, client, message: Message):
-        """Test command to check if bot is working"""
-        await message.reply(f"Привет мир от {self.session_name}")
     
     async def enable_command(self, client, message: Message):
         """Enable bot in current chat"""
@@ -204,6 +198,108 @@ class Bot:
         messages = self.db.get_last_messages(chat_id, 10)
         history = format_chat_history(messages)
         await message.reply(f"Last 10 messages:\n\n{history}")
+    
+    async def test_prompt_command(self, client, message: Message):
+        """Show the full prompt that would be sent to AI (without calling AI)"""
+        from ai_service import load_system_prompt, GeminiModel
+        import re
+        
+        chat_id = message.chat.id
+        logging.info(f"[{self.session_name}] Test prompt command triggered in chat {chat_id}")
+        
+        # Extract query from message (similar to process_gemini)
+        query = message.text
+        if "," in query:
+            query = query.split(",", 1)[1].strip()
+        elif " " in query:
+            query = query.split(" ", 1)[1].strip()
+        else:
+            query = ""
+        
+        # Extract context limit from query (!контекст=N)
+        context_limit = 120  # Default value
+        if "!контекст=" in query.lower():
+            match = re.search(r'!контекст=(\d+)', query, re.IGNORECASE)
+            if match:
+                try:
+                    requested_limit = int(match.group(1))
+                    context_limit = min(requested_limit, 3000)
+                    query = re.sub(r'!контекст=\d+', '', query, flags=re.IGNORECASE).strip()
+                except ValueError:
+                    pass
+        
+        # Get chat history with specified limit
+        messages = self.db.get_last_messages(chat_id, limit=context_limit)
+        history = format_chat_history(messages)
+        
+        # Build combined query (same as process_gemini)
+        combined_query = history + "\n\nТекущий запрос пользователя: " + query
+        
+        # Determine model
+        model = GeminiModel.FLASH_THINKING if "!думай" in query.lower() else GeminiModel.FLASH
+        model_name = model.value
+        
+        # Load system prompt
+        system_prompt = load_system_prompt()
+        
+        # Build full prompt display
+        separator = "=" * 50
+        full_display = f"""
+🔍 **ТЕСТ ПРОМПТА** (AI не вызывается)
+
+{separator}
+📋 **SYSTEM INSTRUCTION:**
+{separator}
+{system_prompt}
+
+{separator}
+💬 **USER CONTENT (Combined Query):**
+{separator}
+{combined_query}
+
+{separator}
+⚙️ **НАСТРОЙКИ:**
+{separator}
+Модель: {model_name}
+Контекст: {context_limit} сообщений
+Температура: 1
+Top P: 0.95
+Top K: 60
+Max tokens: 8192
+Tools: Google Search
+
+{separator}
+📊 **СТАТИСТИКА:**
+{separator}
+Длина system prompt: {len(system_prompt)} символов
+Длина user content: {len(combined_query)} символов
+Общая длина: {len(system_prompt) + len(combined_query)} символов
+Количество сообщений в истории: {len(messages)}
+"""
+        
+        # Send in chunks if too long
+        max_length = 4000
+        if len(full_display) > max_length:
+            # Split into chunks
+            chunks = []
+            current_chunk = ""
+            for line in full_display.split('\n'):
+                if len(current_chunk) + len(line) + 1 > max_length:
+                    chunks.append(current_chunk)
+                    current_chunk = line + '\n'
+                else:
+                    current_chunk += line + '\n'
+            if current_chunk:
+                chunks.append(current_chunk)
+            
+            # Send first chunk as edit
+            await message.edit_text(f"{message.text}\n\n✅ Генерирую тест промпта...")
+            
+            # Send remaining chunks as replies
+            for i, chunk in enumerate(chunks, 1):
+                await message.reply(f"**Часть {i}/{len(chunks)}:**\n\n{chunk}", parse_mode=ParseMode.MARKDOWN)
+        else:
+            await message.reply(full_display, parse_mode=ParseMode.MARKDOWN)
     
     async def media_command(self, client, message: Message):
         """Analyze media file using Gemini"""
