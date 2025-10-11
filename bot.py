@@ -100,10 +100,10 @@ class Bot:
         self.client.on_message(filters.all & filters.command("media", prefixes="!"))(self.media_command)
         
         # Mark as important (must be before process_gemini to take precedence)
-        self.client.on_message(filters.me & filters.command("Гемини", prefixes="!"))(self.mark_important)
+        self.client.on_message(filters.me & filters.command(["Гемини", "гемини"], prefixes="!"))(self.mark_important)
         
-        # Process Gemini requests
-        self.client.on_message(filters.all & filters.regex("Гемини"))(self.process_gemini)
+        # Process Gemini requests (case-insensitive)
+        self.client.on_message(filters.all & filters.regex(r"(?i)гемини"))(self.process_gemini)
         
         # Store all messages (last handler, catches everything)
         self.client.on_message(filters.all)(self.store_message)
