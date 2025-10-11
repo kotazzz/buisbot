@@ -80,8 +80,3 @@ def format_chat_history(messages: List[Tuple]) -> str:
         lines.append(line)
         
     return "\n".join(lines)
-
-def prevent_injection(text: str) -> str:
-    """Prevent userbot injection by replacing special characters"""
-    text = text.replace(".e", ",e")
-    return text

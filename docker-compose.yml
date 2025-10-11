@@ -1,6 +1,6 @@
 
 services:
-  bot:
+  bots:
     build:
       context: .
       dockerfile: Dockerfile
@@ -11,20 +11,6 @@ services:
       - .env
     restart: unless-stopped
 
-  bot_2:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/app
-      - korbot:/app/data
-    env_file:
-      - .env.bot2
-    restart: unless-stopped
-    profiles:
-      - bot2 #docker compose up --profile bot2
-
 volumes:
   data:
-  korbot:
 

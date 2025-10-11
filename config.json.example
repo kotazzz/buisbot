@@ -1,0 +1,18 @@
+[
+  {
+    "session_name": "business_bot",
+    "api_id": 1234567,
+    "api_hash": "your_api_hash_here",
+    "bot_owner_id": 123456789,
+    "database_path": "data/business_bot.db",
+    "gemini_api_key": "your_gemini_api_key_for_first_bot"
+  },
+  {
+    "session_name": "second_bot",
+    "api_id": 7654321,
+    "api_hash": "another_api_hash_here",
+    "bot_owner_id": 123456789,
+    "database_path": "data/second_bot.db",
+    "gemini_api_key": "your_gemini_api_key_for_second_bot"
+  }
+]
