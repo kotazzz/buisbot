@@ -88,6 +88,11 @@ class Bot:
         self.client.on_message(filters.me & filters.command("enable", prefixes="!"))(self.enable_command)
         self.client.on_message(filters.me & filters.command("disable", prefixes="!"))(self.disable_command)
         
+        # Statistics and pins management (owner only)
+        self.client.on_message(filters.me & filters.command("stats", prefixes="!"))(self.stats_command)
+        self.client.on_message(filters.me & filters.command("pins", prefixes="!"))(self.pins_command)
+        self.client.on_message(filters.me & filters.command("unpin", prefixes="!"))(self.unpin_command)
+        
         # Debug command
         self.client.on_message(filters.me & filters.command("debug", prefixes="!"))(self.debug_command)
         
@@ -124,6 +129,73 @@ class Bot:
             await message.edit_text(f"{message.text}\n\nChat disabled ❌")
         else:
             await message.edit_text(f"{message.text}\n\nChat already disabled ❌")
+    
+    async def stats_command(self, client, message: Message):
+        """Show database statistics (owner only)"""
+        if not message.from_user or message.from_user.id != self.owner_id:
+            return
+        
+        stats = self.db.get_stats()
+        
+        response = "📊 **Статистика базы данных**\n\n"
+        response += f"📨 Всего сообщений: **{stats['total_messages']}**\n"
+        response += f"⭐ Закрепленных (важных): **{stats['important_messages']}**\n"
+        response += f"🤖 Ответов Gemini: **{stats['gemini_responses']}**\n"
+        response += f"✅ Активных чатов: **{stats['whitelisted_chats']}**\n\n"
+        
+        if stats['messages_by_chat']:
+            response += "📊 Сообщений по чатам:\n"
+            for chat_id, count in stats['messages_by_chat'][:5]:
+                response += f"  • Chat {chat_id}: {count}\n"
+        
+        await message.reply(response, parse_mode=ParseMode.MARKDOWN)
+    
+    async def pins_command(self, client, message: Message):
+        """Show all pinned messages (owner only)"""
+        if not message.from_user or message.from_user.id != self.owner_id:
+            return
+        
+        chat_id = message.chat.id
+        pins = self.db.get_pinned_messages(chat_id)
+        
+        if not pins:
+            await message.reply("📌 Нет закрепленных сообщений в этом чате")
+            return
+        
+        response = f"📌 **Закрепленные сообщения ({len(pins)})**:\n\n"
+        
+        for db_id, msg_id, author, date, content in pins:
+            # Truncate long content
+            preview = content[:100] + "..." if len(content) > 100 else content
+            response += f"🔸 ID: `{db_id}` | Msg: {msg_id}\n"
+            response += f"   👤 {author} | 📅 {date[:10]}\n"
+            response += f"   💬 {preview}\n\n"
+        
+        response += "\n💡 Используйте `!unpin <ID>` для удаления"
+        
+        await message.reply(response, parse_mode=ParseMode.MARKDOWN)
+    
+    async def unpin_command(self, client, message: Message):
+        """Unpin a message by database ID (owner only)"""
+        if not message.from_user or message.from_user.id != self.owner_id:
+            return
+        
+        # Parse message ID
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.reply("❌ Использование: `!unpin <message_id>`", parse_mode=ParseMode.MARKDOWN)
+            return
+        
+        try:
+            db_id = int(parts[1])
+        except ValueError:
+            await message.reply("❌ ID должен быть числом")
+            return
+        
+        if self.db.unpin_message(db_id):
+            await message.edit_text(f"{message.text}\n\n✅ Сообщение откреплено")
+        else:
+            await message.edit_text(f"{message.text}\n\n❌ Сообщение не найдено или уже откреплено")
     
     async def debug_command(self, client, message: Message):
         """Show last messages from database"""

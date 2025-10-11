@@ -109,3 +109,67 @@ class Database:
             
             # Combine important and normal messages
             return normal_messages + important_messages
+    
+    def get_stats(self) -> dict:
+        """Get database statistics"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Total messages
+            cursor.execute("SELECT COUNT(*) FROM messages")
+            total_messages = cursor.fetchone()[0]
+            
+            # Important messages (pins)
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE important='Important'")
+            important_messages = cursor.fetchone()[0]
+            
+            # Gemini responses
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE important='Gemini'")
+            gemini_responses = cursor.fetchone()[0]
+            
+            # Whitelisted chats
+            cursor.execute("SELECT COUNT(*) FROM whitelisted_chats")
+            whitelisted_chats = cursor.fetchone()[0]
+            
+            # Messages by chat
+            cursor.execute("""
+                SELECT chat_id, COUNT(*) as count 
+                FROM messages 
+                GROUP BY chat_id 
+                ORDER BY count DESC
+            """)
+            messages_by_chat = cursor.fetchall()
+            
+            return {
+                'total_messages': total_messages,
+                'important_messages': important_messages,
+                'gemini_responses': gemini_responses,
+                'whitelisted_chats': whitelisted_chats,
+                'messages_by_chat': messages_by_chat
+            }
+    
+    def get_pinned_messages(self, chat_id: int) -> List[Tuple]:
+        """Get all pinned (important) messages for a chat"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, message_id, author, date, content
+                FROM messages
+                WHERE chat_id=? AND important='Important'
+                ORDER BY id DESC
+                """,
+                (chat_id,)
+            )
+            return cursor.fetchall()
+    
+    def unpin_message(self, db_id: int) -> bool:
+        """Remove important flag from a message by database ID"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE messages SET important='None' WHERE id=? AND important='Important'",
+                (db_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
