@@ -495,8 +495,10 @@ Tools: Google Search
         else:
             query = ""
         
-        # Extract context limit from query (!контекст=N)
+        # Initialize context_limit with default value
+        current_context_limit = context_limit
         
+        # Extract context limit from query (!контекст=N)
         if "!контекст=" in query.lower():
             import re
             match = re.search(r'!контекст=(\d+)', query, re.IGNORECASE)
@@ -504,15 +506,15 @@ Tools: Google Search
                 try:
                     requested_limit = int(match.group(1))
                     # Limit to maximum 3000 messages
-                    context_limit = min(requested_limit, 3000)
+                    current_context_limit = min(requested_limit, 3000)
                     # Remove the !контекст=N from query
                     query = re.sub(r'!контекст=\d+', '', query, flags=re.IGNORECASE).strip()
-                    logging.info(f"[{self.session_name}] Context limit set to {context_limit}")
+                    logging.info(f"[{self.session_name}] Context limit set to {current_context_limit}")
                 except ValueError:
                     logging.warning(f"[{self.session_name}] Invalid context limit value, using default")
         
         # Get chat history with specified limit
-        messages = self.db.get_last_messages(chat_id, limit=context_limit)
+        messages = self.db.get_last_messages(chat_id, limit=current_context_limit)
         history = format_chat_history(messages)
         
         combined_query = history + "\n\nТекущий запрос пользователя: " + query
@@ -562,8 +564,9 @@ Tools: Google Search
                     await message.reply(f"❌ {error_msg}")
 
         except (ValueError, KeyError) as e:
-            if "Peer id invalid" in str(e):
-                logging.warning(f"[{self.session_name}] Peer id invalid error: {e}")
+            error_str = str(e)
+            if "Peer id invalid" in error_str or "ID not found" in error_str:
+                logging.warning(f"[{self.session_name}] Peer/ID error (ignoring): {e}")
                 return
             raise e
     
