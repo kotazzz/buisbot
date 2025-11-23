@@ -9,7 +9,6 @@ from typing import List, Optional, Tuple
 
 from google import genai
 from google.genai import types as genai_types
-from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, InternalServerError
 
 # Removed global client - each bot now has its own client instance
 # Global client was removed to support per-session API keys
@@ -215,6 +214,35 @@ def _build_generation_config(model: GeminiModel, is_media_request: bool = False)
     return api_model, genai_types.GenerateContentConfig(**config_args)
 
 
+# Транзиентные имена ошибок (без прямого импорта пакета исключений)
+TRANSIENT_ERROR_NAMES = {
+    "ResourceExhausted",
+    "ServiceUnavailable",
+    "InternalServerError",
+    "RateLimitError",
+    "TooManyRequests",
+    "GatewayTimeout",
+}
+
+def _is_transient_error(e: Exception) -> bool:
+    name = e.__class__.__name__
+    if name in TRANSIENT_ERROR_NAMES:
+        return True
+    msg = str(e).lower()
+    return any(
+        kw in msg
+        for kw in [
+            "rate limit",
+            "exhausted",
+            "unavailable",
+            "internal error",
+            "overloaded",
+            "timeout",
+            "temporarily",
+        ]
+    )
+
+
 async def call_gemini_api(
     client: genai.Client,
     query: str,
@@ -290,17 +318,14 @@ async def call_gemini_api(
                     response_text = "🎩" + response_text
                 
                 return response_text
-
-            except (ResourceExhausted, ServiceUnavailable, InternalServerError) as e:
-                logging.warning(f"Gemini API error (attempt {attempt + 1}/{retries}): {e}")
-                if attempt < retries - 1:
-                    await asyncio.sleep(2 ** attempt)
-                else:
-                    return "⚠️ ИИ временно недоступен (перегрузка или лимиты). Попробуйте позже."
             except Exception as e:
-                # For other exceptions, re-raise or handle immediately
-                raise e
-        
+                if _is_transient_error(e):
+                    logging.warning(f"Gemini transient error (attempt {attempt + 1}/{retries}): {e}")
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    return "⚠️ ИИ временно недоступен (перегрузка или лимиты). Попробуйте позже."
+                raise
     except Exception as e:
         logging.error(f"Error calling Gemini API: {str(e)}")
         error_message = f"Ошибка при вызове Gemini API: {str(e)}"
