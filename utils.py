@@ -44,7 +44,9 @@ def generate_tags(msg: Message) -> str:
     if msg.animation:
         tags.append("содержит анимацию")
     if msg.forward_from:
-        tags.append(f'переслано из "{msg.forward_from.full_name}"')
+        user = msg.forward_from
+        full_name = f"{user.first_name} {user.last_name or ''}".strip()
+        tags.append(f'переслано из "{full_name}"')
     elif msg.forward_from_chat:
         title = msg.forward_from_chat.title if msg.forward_from_chat.title else "неизвестно"
         tags.append(f'переслано из "{title}"')

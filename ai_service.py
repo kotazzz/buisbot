@@ -3,11 +3,13 @@ import logging
 import mimetypes
 import os
 import time
+import uuid
 from enum import Enum
 from typing import List, Optional, Tuple
 
 from google import genai
 from google.genai import types as genai_types
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, InternalServerError
 
 # Removed global client - each bot now has its own client instance
 # Global client was removed to support per-session API keys
@@ -220,6 +222,7 @@ async def call_gemini_api(
     media_paths: Optional[List[str]] = None,
     mime_types: Optional[List[str]] = None,
     is_media_request: bool = False,
+    retries: int = 3,
 ) -> str:
     """
     Call Gemini API with the given query text and model asynchronously
@@ -231,6 +234,7 @@ async def call_gemini_api(
         media_paths: Optional list of paths to media files to include
         mime_types: Optional list of MIME types for the media files
         is_media_request: Flag to indicate if this is a media analysis request
+        retries: Number of retries for API calls
 
     Returns:
         Response text from Gemini
@@ -264,25 +268,38 @@ async def call_gemini_api(
         
         logging.info(f"Sending request to Gemini model {api_model} with {len(parts)} parts.")
         
-        # Call API
+        # Call API with retries
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda c=client, m=api_model, ct=contents, cfg=gen_config: c.models.generate_content(
-                model=m,
-                contents=ct,
-                config=cfg,
-            ),
-        )
         
-        response_text = result.text
-        logging.info("Received response from Gemini.")
-        
-        # Add thinking hat emoji for thinking model
-        if model == GeminiModel.FLASH_THINKING and not is_media_request:
-            response_text = "🎩" + response_text
-        
-        return response_text
+        for attempt in range(retries):
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    lambda c=client, m=api_model, ct=contents, cfg=gen_config: c.models.generate_content(
+                        model=m,
+                        contents=ct,
+                        config=cfg,
+                    ),
+                )
+                
+                response_text = result.text
+                logging.info("Received response from Gemini.")
+                
+                # Add thinking hat emoji for thinking model
+                if model == GeminiModel.FLASH_THINKING and not is_media_request:
+                    response_text = "🎩" + response_text
+                
+                return response_text
+
+            except (ResourceExhausted, ServiceUnavailable, InternalServerError) as e:
+                logging.warning(f"Gemini API error (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    return "⚠️ ИИ временно недоступен (перегрузка или лимиты). Попробуйте позже."
+            except Exception as e:
+                # For other exceptions, re-raise or handle immediately
+                raise e
         
     except Exception as e:
         logging.error(f"Error calling Gemini API: {str(e)}")
@@ -309,26 +326,27 @@ async def download_media(client, message, download_dir="data/media"):
         Path to downloaded file or None
     """
     os.makedirs(download_dir, exist_ok=True)
+    unique_id = uuid.uuid4().hex[:8]
     
     # Photo
     if message.photo:
         return await client.download_media(
             message.photo, 
-            file_name=f"{download_dir}/photo_{message.id}.jpg"
+            file_name=f"{download_dir}/photo_{message.id}_{unique_id}.jpg"
         )
     
     # Video
     if message.video:
         return await client.download_media(
             message.video, 
-            file_name=f"{download_dir}/video_{message.id}.mp4"
+            file_name=f"{download_dir}/video_{message.id}_{unique_id}.mp4"
         )
     
     # Voice
     if message.voice:
         return await client.download_media(
             message.voice, 
-            file_name=f"{download_dir}/voice_{message.id}.ogg"
+            file_name=f"{download_dir}/voice_{message.id}_{unique_id}.ogg"
         )
     
     # Audio
@@ -344,7 +362,7 @@ async def download_media(client, message, download_dir="data/media"):
         
         return await client.download_media(
             message.audio, 
-            file_name=f"{download_dir}/audio_{message.id}{ext}"
+            file_name=f"{download_dir}/audio_{message.id}_{unique_id}{ext}"
         )
     
     # Document
@@ -372,7 +390,7 @@ async def download_media(client, message, download_dir="data/media"):
         
         return await client.download_media(
             message.document, 
-            file_name=f"{download_dir}/doc_{message.id}{ext}"
+            file_name=f"{download_dir}/doc_{message.id}_{unique_id}{ext}"
         )
     
     return None

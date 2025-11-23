@@ -5,13 +5,14 @@ from typing import Optional
 from google import genai
 from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
+from pyrogram.errors import FileReferenceExpired
 from pyrogram.types import Message
 
 from ai_service import GeminiModel, call_gemini_api, download_media
 from database import Database, MessageImportance
 from utils import format_chat_history, generate_tags
 
-
+CONTEXT_LIMIT = 5
 class Bot:
     """
     Business Bot class - encapsulates a single bot instance with its own client, database, and handlers
@@ -106,6 +107,32 @@ class Bot:
         # Store all messages (last handler, catches everything)
         self.client.on_message(filters.all)(self.store_message)
     
+    # --- Helper Methods ---
+
+    async def send_chunked_response(self, message: Message, text: str):
+        """
+        Helper to send long messages in chunks.
+        """
+        max_length = 4096
+        
+        # Split into chunks
+        chunks = []
+        current_chunk = ""
+        for line in text.split('\n'):
+            if len(current_chunk) + len(line) + 1 > max_length:
+                chunks.append(current_chunk)
+                current_chunk = line + '\n'
+            else:
+                current_chunk += line + '\n'
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+        for chunk in chunks:
+            try:
+                await message.reply(chunk, parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                await message.reply(chunk, parse_mode=ParseMode.DISABLED)
+
     # --- Command Handlers ---
     
     async def enable_command(self, client, message: Message):
@@ -217,7 +244,7 @@ class Bot:
             query = ""
         
         # Extract context limit from query (!контекст=N)
-        context_limit = 120  # Default value
+        
         if "!контекст=" in query.lower():
             match = re.search(r'!контекст=(\d+)', query, re.IGNORECASE)
             if match:
@@ -341,7 +368,12 @@ Tools: Google Search
         
         try:
             # Download media file
-            media_path = await download_media(client, reply_msg)
+            try:
+                media_path = await download_media(client, reply_msg)
+            except FileReferenceExpired:
+                logging.warning(f"[{self.session_name}] FileReferenceExpired, refreshing message...")
+                refreshed_msg = await client.get_messages(message.chat.id, reply_msg.id)
+                media_path = await download_media(client, refreshed_msg)
             
             if not media_path or not os.path.exists(media_path):
                 await processing_msg.edit_text("❌ Не удалось загрузить медиафайл")
@@ -464,7 +496,7 @@ Tools: Google Search
             query = ""
         
         # Extract context limit from query (!контекст=N)
-        context_limit = 120  # Default value
+        
         if "!контекст=" in query.lower():
             import re
             match = re.search(r'!контекст=(\d+)', query, re.IGNORECASE)
@@ -492,38 +524,48 @@ Tools: Google Search
             # Send a "Thinking..." message first
             thinking_message = await message.reply("💭 Думаю...")
             
-            # Call Gemini API (using bot's personal client)
-            response = await call_gemini_api(self.gemini_client, combined_query, model)
-            
-            # For non-owner users, we could add injection protection here if needed
-            # But since we removed prevent_injection (it was unreliable),
-            # we rely on command filters to prevent self-commands
-            
-            # Try editing with Markdown first
             try:
-                await thinking_message.edit_text(response, parse_mode=ParseMode.MARKDOWN)
-            except Exception as e:
-                logging.warning(f"Failed to send with Markdown: {e}")
-                await thinking_message.edit_text(response)
+                # Call Gemini API (using bot's personal client)
+                response = await call_gemini_api(self.gemini_client, combined_query, model)
+                
+                # Handle response sending
+                if len(response) > 4096:
+                    await thinking_message.delete()
+                    await self.send_chunked_response(message, response)
+                else:
+                    try:
+                        await thinking_message.edit_text(response, parse_mode=ParseMode.MARKDOWN)
+                    except Exception as e:
+                        logging.warning(f"Failed to send with Markdown: {e}")
+                        await thinking_message.edit_text(response, parse_mode=ParseMode.DISABLED)
+                
+                # Store the Gemini response
+                self.db.store_message(
+                    chat_id=chat_id,
+                    message_id=thinking_message.id,
+                    author="Gemini",
+                    date=thinking_message.date,
+                    content=response,
+                    tags="",
+                    importance=MessageImportance.GEMINI
+                )
             
-            # Store the Gemini response
-            self.db.store_message(
-                chat_id=chat_id,
-                message_id=thinking_message.id,
-                author="Gemini",
-                date=thinking_message.date,
-                content=response,
-                tags="",
-                importance=MessageImportance.GEMINI
-            )
-        
-        except Exception as e:
-            error_msg = f"Error processing request: {str(e)}"
-            logging.error(f"[{self.session_name}] {error_msg}")
-            if "thinking_message" in locals():
-                await thinking_message.edit_text(f"❌ {error_msg}")
-            else:
-                await message.reply(f"❌ {error_msg}")
+            except Exception as e:
+                error_msg = f"Error processing request: {str(e)}"
+                logging.error(f"[{self.session_name}] {error_msg}")
+                if "thinking_message" in locals():
+                    try:
+                        await thinking_message.edit_text(f"❌ {error_msg}")
+                    except Exception:
+                        pass
+                else:
+                    await message.reply(f"❌ {error_msg}")
+
+        except (ValueError, KeyError) as e:
+            if "Peer id invalid" in str(e):
+                logging.warning(f"[{self.session_name}] Peer id invalid error: {e}")
+                return
+            raise e
     
     async def store_message(self, client, message: Message):
         """Store all messages in the database"""
