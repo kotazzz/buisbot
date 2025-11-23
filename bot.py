@@ -12,7 +12,7 @@ from ai_service import GeminiModel, call_gemini_api, download_media
 from database import Database, MessageImportance
 from utils import format_chat_history, generate_tags
 
-CONTEXT_LIMIT = 5
+context_limit = 5
 class Bot:
     """
     Business Bot class - encapsulates a single bot instance with its own client, database, and handlers
