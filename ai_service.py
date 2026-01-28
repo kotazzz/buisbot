@@ -32,10 +32,10 @@ def load_system_prompt() -> str:
 
 class GeminiModel(Enum):
     # FLASH = "gemini-flash-lite-latest"
-    FLASH = "gemini-flash-latest"
-    FLASH_THINKING = "gemini-2.5-pro"
+    FLASH = "gemini-3-flash"
+    FLASH_THINKING = "gemini-3-flash"
     # FLASH_MULTIMODAL = "gemini-flash-latest"
-    FLASH_MULTIMODAL = "gemini-2.5-pro"
+    FLASH_MULTIMODAL = "gemini-3-flash"
 
 
 def get_mime_type(file_path: str) -> str:
@@ -309,6 +309,14 @@ async def call_gemini_api(
                         config=cfg,
                     ),
                 )
+                
+                # Check if response text is None
+                if result is None or not hasattr(result, 'text') or result.text is None:
+                    logging.warning(f"Gemini returned empty/None response (attempt {attempt + 1}/{retries})")
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    return "⚠️ ИИ вернул пустой ответ. Попробуйте позже."
                 
                 response_text = result.text
                 logging.info("Received response from Gemini.")
